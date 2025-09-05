@@ -15,8 +15,14 @@ from sklearn.metrics import (
     f1_score,
 )
 from sklearn.manifold import TSNE
-from sdv.single_table import TVAESynthesizer
-from sdv.metadata import SingleTableMetadata
+
+# Try importing SDV (TVAE Synthesizer)
+try:
+    from sdv.single_table import TVAESynthesizer
+    from sdv.metadata import SingleTableMetadata
+    SDV_AVAILABLE = True
+except Exception as e:
+    SDV_AVAILABLE = False
 
 st.set_page_config(page_title="Fraud Detection with Synthetic Data", layout="wide")
 
@@ -26,7 +32,14 @@ st.title("💳 Credit Card Fraud Detection with Data Augmentation (TVAE)")
 uploaded_file = st.file_uploader("📂 Upload creditcard.csv", type=["csv"])
 
 if uploaded_file:
-    data = pd.read_csv(uploaded_file)
+    # Option to load smaller dataset
+    use_sample = st.checkbox("🔹 Use 20,000 sample rows (faster, less RAM)", value=True)
+
+    if use_sample:
+        data = pd.read_csv(uploaded_file).sample(20000, random_state=42)
+    else:
+        data = pd.read_csv(uploaded_file)
+
     st.success(f"Dataset Loaded! Shape: {data.shape}")
     st.write(data.head())
 
@@ -70,84 +83,99 @@ if uploaded_file:
     RocCurveDisplay.from_estimator(clf_baseline, X_test, y_test, ax=ax)
     st.pyplot(fig)
 
-    # Train TVAE on Fraud Data
-    fraud_data = data[data["Class"] == 1].copy().drop("Class", axis=1)
-    metadata = SingleTableMetadata()
-    metadata.detect_from_dataframe(fraud_data)
+    # Augmentation with TVAE (if available)
+    synth_fraud = pd.DataFrame()
+    if SDV_AVAILABLE:
+        try:
+            fraud_data = data[data["Class"] == 1].copy().drop("Class", axis=1)
+            metadata = SingleTableMetadata()
+            metadata.detect_from_dataframe(fraud_data)
 
-    synthesizer = TVAESynthesizer(metadata)
-    st.info("⏳ Training TVAE on 500 fraud samples...")
-    synthesizer.fit(fraud_data.sample(500, random_state=42, replace=True))
-    st.success("✅ TVAE training complete!")
+            synthesizer = TVAESynthesizer(metadata)
+            st.info("⏳ Training TVAE on 500 fraud samples...")
+            synthesizer.fit(fraud_data.sample(500, random_state=42, replace=True))
+            st.success("✅ TVAE training complete!")
 
-    synth_fraud = synthesizer.sample(num_rows=5000)
-    synth_fraud["Class"] = 1
-    st.write("Synthetic fraud samples generated:", synth_fraud.shape)
+            synth_fraud = synthesizer.sample(num_rows=5000)
+            synth_fraud["Class"] = 1
+            st.write("Synthetic fraud samples generated:", synth_fraud.shape)
 
-    # Augmented Data
-    augmented_data = pd.concat([data, synth_fraud], ignore_index=True)
-    X_aug = augmented_data.drop("Class", axis=1)
-    y_aug = augmented_data["Class"]
-    X_train_aug, X_test_aug, y_train_aug, y_test_aug = train_test_split(
-        X_aug, y_aug, test_size=0.3, stratify=y_aug, random_state=42
-    )
+        except Exception as e:
+            st.error(f"❌ TVAE training failed: {e}")
+    else:
+        st.warning("⚠️ SDV / TVAE not installed. Skipping synthetic data generation.")
 
-    clf_aug = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
-    clf_aug.fit(X_train_aug, y_train_aug)
-    y_pred_aug = clf_aug.predict(X_test_aug)
-    augmented_auc = roc_auc_score(y_test_aug, clf_aug.predict_proba(X_test_aug)[:, 1])
+    if not synth_fraud.empty:
+        # Augmented Data
+        augmented_data = pd.concat([data, synth_fraud], ignore_index=True)
+        X_aug = augmented_data.drop("Class", axis=1)
+        y_aug = augmented_data["Class"]
+        X_train_aug, X_test_aug, y_train_aug, y_test_aug = train_test_split(
+            X_aug, y_aug, test_size=0.3, stratify=y_aug, random_state=42
+        )
 
-    st.subheader("🚀 Augmented Model Performance")
-    st.text(classification_report(y_test_aug, y_pred_aug, digits=4))
-    st.metric("Augmented AUC", f"{augmented_auc:.4f}")
+        clf_aug = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+        clf_aug.fit(X_train_aug, y_train_aug)
+        y_pred_aug = clf_aug.predict(X_test_aug)
+        augmented_auc = roc_auc_score(y_test_aug, clf_aug.predict_proba(X_test_aug)[:, 1])
 
-    # ROC Curve Augmented
-    fig, ax = plt.subplots()
-    RocCurveDisplay.from_estimator(clf_aug, X_test_aug, y_test_aug, ax=ax)
-    st.pyplot(fig)
+        st.subheader("🚀 Augmented Model Performance")
+        st.text(classification_report(y_test_aug, y_pred_aug, digits=4))
+        st.metric("Augmented AUC", f"{augmented_auc:.4f}")
 
-    # t-SNE
-    st.subheader("🌐 t-SNE: Real vs Synthetic Fraud")
-    real_fraud_500 = fraud_data.sample(n=500, random_state=42, replace=True)
-    synthetic_500 = synth_fraud.drop("Class", axis=1).sample(n=500, random_state=42, replace=True)
-    combined = pd.concat(
-        [real_fraud_500.assign(Source="Real"), synthetic_500.assign(Source="Synthetic")]
-    )
-    combined_targets = combined.pop("Source")
+        # ROC Curve Augmented
+        fig, ax = plt.subplots()
+        RocCurveDisplay.from_estimator(clf_aug, X_test_aug, y_test_aug, ax=ax)
+        st.pyplot(fig)
 
-    tsne = TSNE(n_components=2, random_state=42, perplexity=30)
-    tsne_repr = tsne.fit_transform(combined)
-    tsne_df = pd.DataFrame(tsne_repr, columns=["TSNE1", "TSNE2"])
-    tsne_df["Source"] = combined_targets.values
+        # t-SNE
+        st.subheader("🌐 t-SNE: Real vs Synthetic Fraud")
+        try:
+            real_fraud_500 = fraud_data.sample(n=500, random_state=42, replace=True)
+            synthetic_500 = synth_fraud.drop("Class", axis=1).sample(
+                n=500, random_state=42, replace=True
+            )
+            combined = pd.concat(
+                [real_fraud_500.assign(Source="Real"), synthetic_500.assign(Source="Synthetic")]
+            )
+            combined_targets = combined.pop("Source")
 
-    fig, ax = plt.subplots(figsize=(8, 6))
-    sns.scatterplot(data=tsne_df, x="TSNE1", y="TSNE2", hue="Source", alpha=0.6, ax=ax)
-    st.pyplot(fig)
+            tsne = TSNE(n_components=2, random_state=42, perplexity=30)
+            tsne_repr = tsne.fit_transform(combined)
+            tsne_df = pd.DataFrame(tsne_repr, columns=["TSNE1", "TSNE2"])
+            tsne_df["Source"] = combined_targets.values
 
-    # Comparison table
-    st.subheader("📑 Results Comparison")
-    results = pd.DataFrame(
-        {
-            "Model": ["Baseline (Real Data)", "Augmented (Real + Synthetic)"],
-            "Precision": [
-                precision_score(y_test, y_pred),
-                precision_score(y_test_aug, y_pred_aug),
-            ],
-            "Recall": [
-                recall_score(y_test, y_pred),
-                recall_score(y_test_aug, y_pred_aug),
-            ],
-            "F1-Score": [
-                f1_score(y_test, y_pred),
-                f1_score(y_test_aug, y_pred_aug),
-            ],
-            "AUC": [baseline_auc, augmented_auc],
-        }
-    )
-    st.dataframe(results, use_container_width=True)
+            fig, ax = plt.subplots(figsize=(8, 6))
+            sns.scatterplot(data=tsne_df, x="TSNE1", y="TSNE2", hue="Source", alpha=0.6, ax=ax)
+            st.pyplot(fig)
+        except Exception as e:
+            st.error(f"t-SNE visualization failed: {e}")
 
-    # Save model
-    joblib.dump(clf_aug, "fraud_model.pkl")
-    st.success("✅ Final Augmented Model saved as fraud_model.pkl")
+        # Comparison table
+        st.subheader("📑 Results Comparison")
+        results = pd.DataFrame(
+            {
+                "Model": ["Baseline (Real Data)", "Augmented (Real + Synthetic)"],
+                "Precision": [
+                    precision_score(y_test, y_pred),
+                    precision_score(y_test_aug, y_pred_aug),
+                ],
+                "Recall": [
+                    recall_score(y_test, y_pred),
+                    recall_score(y_test_aug, y_pred_aug),
+                ],
+                "F1-Score": [
+                    f1_score(y_test, y_pred),
+                    f1_score(y_test_aug, y_pred_aug),
+                ],
+                "AUC": [baseline_auc, augmented_auc],
+            }
+        )
+        st.dataframe(results, use_container_width=True)
+
+        # Save model
+        joblib.dump(clf_aug, "fraud_model.pkl")
+        st.success("✅ Final Augmented Model saved as fraud_model.pkl")
+
 else:
     st.warning("👆 Please upload `creditcard.csv` to start.")
