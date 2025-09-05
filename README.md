@@ -57,6 +57,11 @@ You can view the full project presentation using the following link:
 **[Project Presentation (Google Drive)](https://drive.google.com/file/d/1y0bT1ZBivlnSpm3rZtzmZpLIddMYpBgF/view?usp=drivesdk)**
 
 
+## ▶ Quick Access to Report
+You can view the full project presentation using the following link:  
+**[Project Report (Google Drive)](https://docs.google.com/document/d/1A_btaHfAet5-iXJB0VVs1bwKzJVBJ3Lp/edit?usp=drivesdk&ouid=117420838695032664161&rtpof=true&sd=true)**
+
+
 
 ## 📊 Workflow
 1. **EDA (Exploratory Data Analysis)**  
@@ -134,3 +139,4 @@ This project has been successfully **deployed** as part of the internship delive
 
 
 👨‍💻 *Completed as part of a 6-Week AI/ML Internship on Generative AI for Data Augmentation.*
+
