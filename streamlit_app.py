@@ -87,7 +87,11 @@ if uploaded_file:
     synth_fraud = pd.DataFrame()
     if SDV_AVAILABLE:
         try:
-            fraud_data = data[data["Class"] == 1].copy().drop("Class", axis=1)
+            fraud_data = data[data["Class"] == 1].copy()
+
+            # ⚠️ Drop columns that break SDV metadata (Time is NOT unique)
+            fraud_data = fraud_data.drop(["Class", "Time"], axis=1, errors="ignore")
+
             metadata = SingleTableMetadata()
             metadata.detect_from_dataframe(fraud_data)
 
