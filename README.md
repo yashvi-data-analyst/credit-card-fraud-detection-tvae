@@ -58,7 +58,7 @@ You can view the full project presentation using the following link:
 
 
 ## ▶ Quick Access to Report
-You can view the full project presentation using the following link: 
+You can view the full project report using the following link: 
 **[Project Report (Google Drive)](https://docs.google.com/document/d/1A_btaHfAet5-iXJB0VVs1bwKzJVBJ3Lp/edit?usp=drivesdk&ouid=117420838695032664161&rtpof=true&sd=true)**
 
 
